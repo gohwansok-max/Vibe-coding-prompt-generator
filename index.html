@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>업무 자동화 프롬프트 빌더 & 정제기</title>
+    <!-- Tailwind CSS 스타일 편리를 위해 CDN 로드 -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+        /* 커스텀 스크롤바 및 부드러운 전환 효과 */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #64748b; }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen font-sans antialiased">
+
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <!-- 헤더 -->
+        <header class="mb-8 border-b border-slate-800 pb-6 flex justify-between items-center">
+            <div>
+                <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r align-middle from-emerald-400 to-cyan-400">
+                    Vibe Prompt Builder
+                </h1>
+                <p class="text-slate-400 text-sm mt-1">변수만 채워 넣어 고품질 AI 프롬프트를 완성하고 복사하세요.</p>
+            </div>
+            <div class="text-xs bg-slate-800 text-emerald-400 px-3 py-1.5 rounded-full border border-slate-700 font-mono">
+                Running Locally ✓
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <!-- 왼쪽: 템플릿 선택 및 변수 입력창 (5단) -->
+            <div class="lg:col-span-5 space-y-6">
+                <!-- 템플릿 네비게이션 -->
+                <div class="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-xl">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">업무 템플릿 선택</label>
+                    <div class="grid grid-cols-3 gap-2" id="templateTabs">
+                        <button onclick="switchTemplate('qa')" id="btn-qa" class="tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-emerald-600 text-white shadow-lg shadow-emerald-900/30">
+                            🔬 품질/연구
+                        </button>
+                        <button onclick="switchTemplate('mail')" id="btn-mail" class="tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-slate-700 text-slate-300 hover:bg-slate-600">
+                            ✉️ 비즈메일
+                        </button>
+                        <button onclick="switchTemplate('youtube')" id="btn-youtube" class="tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-slate-700 text-slate-300 hover:bg-slate-600">
+                            🎬 유튜브
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 동적 입력 폼 컨테이너 -->
+                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl space-y-4">
+                    <h3 class="text-base font-bold text-slate-200 flex items-center gap-2">
+                        <span class="w-2 h-2 rounded-full bg-cyan-400"></span> 변수 입력창
+                    </h3>
+                    <div id="dynamicInputs" class="space-y-4">
+                        <!-- JavaScript에 의해 입력 필드가 동적으로 렌더링됩니다 -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- 오른쪽: 실시간 생성 결과 및 복사 (7단) -->
+            <div class="lg:col-span-7 flex flex-col space-y-4">
+                <div class="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-xl flex-1 flex flex-col min-h-[450px]">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-base font-bold text-slate-200 flex items-center gap-2">
+                            <span class="w-2 h-2 rounded-full bg-emerald-400"></span> 완성된 프롬프트 조립 결과
+                        </h3>
+                        <!-- 복사 완료 토스트 알림 대용 버튼 텍스트 변경 -->
+                        <button onclick="copyToClipboard()" id="copyBtn" class="bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-slate-900 font-bold text-xs px-4 py-2 rounded-lg transition-all transform hover:scale-[1.02] active:scale-[0.98] shadow-md flex items-center gap-1.5">
+                            📋 클립보드 복사
+                        </button>
+                    </div>
+                    
+                    <!-- 결과창 -->
+                    <textarea id="outputPrompt" readonly 
+                        class="w-full flex-1 p-4 bg-slate-900 text-emerald-400 font-mono text-sm rounded-lg border border-slate-700 focus:outline-none resize-none shadow-inner leading-relaxed"></textarea>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 비즈니스 로직 구동 스크립트 -->
+    <script>
+        // 1. 사용할 데이터 구조 정의 (프롬프트 뼈대 및 인풋 구성)
+        const templates = {
+            qa: {
+                systemRole: "당신은 20년 경력의 베테랑 식품 연구원 및 품질 관리(QA/QC) 전문가입니다. 데이터 분석이 정교하며 식품위생법과 식품공전 기준에 엄격합니다.",
+                inputs: [
+                    { id: 'v1', label: '실험/제품명', placeholder: '예: 대체육 패티 시제품, 원기2호 고춧잎차 추출물' },
+                    { id: 'v2', label: '테스트 목적/항목', placeholder: '예: 가속 유통기한 실험에 따른 산가 및 대장균군 변화 측정' },
+                    { id: 'v3', label: '측정 데이터 또는 특이사항', placeholder: '예: 30도 보관 4주 차에 산가 2.5 돌파, 미생물은 음성 유지됨' },
+                    { id: 'v4', label: '원하는 리포트 톤앤매너', placeholder: '예: 임원진 보고용으로 간결하고 개조식으로 작성, 결론 및 개선 대책 위주' }
+                ],
+                skeleton: (v) => `${templates.qa.systemRole}\n\n[분석 요청 사항]\n다음 제공된 실험 정보를 바탕으로, 식품 안전 기준에 부합하는 정식 품질 분석 보고서 초안을 작성해 주세요.\n\n- 대상 제품/실험: ${v.v1 || '(내용 없음)'}\n- 실험 목적: ${v.v2 || '(내용 없음)'}\n- 결과 데이터 및 특이사항:\n${v.v3 || '(내용 없음)'}\n\n[출력 스타일 가이드]\n${v.v4 || '전문적이고 객관적인 연구원 어조로 논리적인 결론을 도출해 줄 것.'}`
+            },
+            mail: {
+                systemRole: "당신은 대기업 및 글로벌 식품사 간의 B2B 비즈니스 커뮤니케이션을 전담하는 전문 비서이자 매너 있는 파트너사 담당자입니다.",
+                inputs: [
+                    { id: 'v1', label: '수신자 (회사/직급)', placeholder: '예: OOO 유통사 구매팀 차장님' },
+                    { id: 'v2', label: '메일 핵심 목적', placeholder: '예: 신제품 품질 검사 성적서 공유 및 단가 협상 미팅 일정 제안' },
+                    { id: 'v3', label: '전달해야 하는 주요 팩트', placeholder: '예: 성적서상 유해물질 불검출 완료, 미팅은 다음 주 화/목 오후 가능' },
+                    { id: 'v4', label: '마무리 어조', placeholder: '예: 정중하면서도 비즈니스 기회를 강조하는 적극적인 톤' }
+                ],
+                skeleton: (v) => `${templates.mail.systemRole}\n\n[비즈니스 이메일 작성 요청]\n아래의 정보를 토대로 격식 있고 명확한 비즈니스 메일 초안을 작성해 주세요. 오탈자나 어색한 비즈니스 표현은 자연스럽게 정정해 주시기 바랍니다.\n\n- 수신: ${v.v1 || '(내용 없음)'}\n- 메일 목적: ${v.v2 || '(내용 없음)'}\n- 주요 전달 사항:\n${v.v3 || '(내용 없음)'}\n\n[기타 요구사항]\n문맥을 부드럽게 이어주는 인사말과 맺음말을 포함해 주시고, 전체적으로 ${v.v4 || '정중하고 전문적인'} 어조로 다듬어 주세요.`
+            },
+            youtube: {
+                systemRole: "당신은 글로벌 경제, 기술 트렌드, 반도체 산업 구조를 대중이 이해하기 쉽게 비유를 들어 설명하는 전문 유튜버이자 최고 수준의 영상 스크립터입니다.",
+                inputs: [
+                    { id: 'v1', label: '영상 주제 (키워드)', placeholder: '예: 미국 금리 인하 기조와 반도체 공급망에 미치는 영향' },
+                    { id: 'v2', label: '타겟 시청자 층', placeholder: '예: 거시경제와 주식 투자에 관심이 많은 3040 직장인' },
+                    { id: 'v3', label: '반드시 다뤄야 할 핵심 논지', placeholder: '예: 삼성전자/SK하이닉스의 HBM 공급망 변화, 환율 변동 리스크 체크' },
+                    { id: 'v4', label: '영상 스타일', placeholder: '예: 도입부에서 강렬한 질문으로 어그로를 끌고, 위트 있는 비유를 섞어 설명형으로 진행' }
+                ],
+                skeleton: (v) => `${templates.youtube.systemRole}\n\n[유튜브 스크립트 작성 요청]\n유튜브 채널 업로드용 영상 스크립트 초안을 작성해 주세요. 시청 이탈을 막기 위해 구어체(~죠, ~입니다) 위주로 자연스럽게 대화하듯 구성해 주세요.\n\n- 핵심 주제: ${v.v1 || '(내용 없음)'}\n- 타겟 독자: ${v.v2 || '(내용 없음)'}\n- 주요 구성 내용:\n${v.v3 || '(내용 없음)'}\n\n[제작 연출 가이드]\n전체 분량은 말하기 기준 약 5분 내외(인트로-본론-결론 구조)로 잡아주시고, ${v.v4 || '지루하지 않고 몰입감 있는'} 방식으로 오프닝 훅(Hook)을 강력하게 만들어 주세요.`
+            }
+        };
+
+        let currentActiveTemplate = 'qa';
+
+        // 2. 입력 필드를 동적으로 생성하는 함수
+        function generateInputForm(templateKey) {
+            const container = document.getElementById('dynamicInputs');
+            container.innerHTML = ''; // 초기화
+            
+            const template = templates[templateKey];
+            
+            template.inputs.forEach(input => {
+                const wrapper = document.createElement('div');
+                wrapper.className = 'flex flex-col space-y-1.5';
+                
+                wrapper.innerHTML = `
+                    <label class="text-xs font-semibold text-slate-300 flex justify-between">
+                        <span>${input.label}</span>
+                    </label>
+                    <textarea 
+                        id="${input.id}" 
+                        placeholder="${input.placeholder}" 
+                        oninput="updateOutput()"
+                        class="w-full bg-slate-900 text-slate-100 text-sm p-3 rounded-lg border border-slate-700 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-all placeholder:text-slate-600 min-h-[60px] rows="2"
+                    ></textarea>
+                `;
+                container.appendChild(wrapper);
+            });
+            
+            updateOutput();
+        }
+
+        // 3. 사용자가 입력할 때마다 우측 결과창을 실시간 업데이트하는 함수
+        function updateOutput() {
+            const template = templates[currentActiveTemplate];
+            const values = {};
+            
+            template.inputs.forEach(input => {
+                const element = document.getElementById(input.id);
+                values[input.id] = element ? element.value : '';
+            });
+            
+            const generatedPrompt = template.skeleton(values);
+            document.getElementById('outputPrompt').value = generatedPrompt;
+        }
+
+        // 4. 템플릿 탭 전환 기능
+        function switchTemplate(templateKey) {
+            currentActiveTemplate = templateKey;
+            
+            // 탭 버튼 스타일 업데이트
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.className = "tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-slate-700 text-slate-300 hover:bg-slate-600";
+            });
+            
+            const activeBtn = document.getElementById(`btn-${templateKey}`);
+            if (templateKey === 'qa') activeBtn.className = "tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-emerald-600 text-white shadow-lg shadow-emerald-900/30";
+            if (templateKey === 'mail') activeBtn.className = "tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-sky-600 text-white shadow-lg shadow-sky-900/30";
+            if (templateKey === 'youtube') activeBtn.className = "tab-btn px-3 py-2.5 rounded-lg text-xs font-bold transition-all bg-red-600 text-white shadow-lg shadow-red-900/30";
+
+            // 인풋 폼 다시 그리기
+            generateInputForm(templateKey);
+        }
+
+        // 5. 클립보드 복사 기능
+        function copyToClipboard() {
+            const textarea = document.getElementById('outputPrompt');
+            textarea.select();
+            textarea.setSelectionRange(0, 99999); // 모바일 대응
+            
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                const copyBtn = document.getElementById('copyBtn');
+                const originalText = copyBtn.innerHTML;
+                
+                // 시각적 피드백 주기
+                copyBtn.innerHTML = "✨ 복사 완료!";
+                copyBtn.classList.remove('from-emerald-500', 'to-cyan-500');
+                copyBtn.classList.add('from-green-400', 'to-emerald-500');
+                
+                setTimeout(() => {
+                    copyBtn.innerHTML = originalText;
+                    copyBtn.classList.remove('from-green-400', 'to-emerald-500');
+                    copyBtn.classList.add('from-emerald-500', 'to-cyan-500');
+                }, 1500);
+            }).catch(err => {
+                alert('복사에 실패했습니다. 직접 선택해서 복사해 주세요.');
+            });
+        }
+
+        // 앱 최초 실행 시 기본 템플릿(품질/연구) 로드
+        window.onload = function() {
+            generateInputForm('qa');
+        };
+    </script>
+</body>
+</html>
